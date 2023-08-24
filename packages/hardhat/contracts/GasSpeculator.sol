@@ -71,22 +71,42 @@ contract GasSpeculator {
 		emit UserRangeDeposit(msg.sender, blockHeight, _range, msg.value);
 }
 
-	// Function to allow only the axiomAddress to input a gas price at a given block height
-	function inputGasPrice(uint256 _gasPrice, uint256 blockHeight) public {
-		require(msg.sender == axiomAddress, "Not the Axiom address");
-		// Close block height
-		blockHeightClosed[blockHeight] = true;
+	// // Function to allow only the axiomAddress to input a gas price at a given block height
+	// function inputGasPrice(uint256 _gasPrice, uint256 blockHeight) public {
+	// 	require(msg.sender == axiomAddress, "Not the Axiom address");
+	// 	// Close block height
+	// 	blockHeightClosed[blockHeight] = true;
 
-		gasPrice[blockHeight] = _gasPrice;
-		emit GasPriceInput(blockHeight, _gasPrice);
-	}
+	// 	gasPrice[blockHeight] = _gasPrice;
+	// 	emit GasPriceInput(blockHeight, _gasPrice);
+	// }
+
+	function provideGasPrice(IAxiomV1.BlockHashWitness calldata witness, bytes calldata header) external {
+        if (block.number - witness.blockNumber <= 256) {
+            require(
+                IAxiomV1(axiomAddress).isRecentBlockHashValid(witness.blockNumber, witness.claimedBlockHash),
+                "Block hash was not validated in cache"
+            );
+        } else {
+            require(IAxiomV1(axiomAddress).isBlockHashValid(witness), "Block hash was not validated in cache");
+        }
+
+        // require(witness.blockNumber > mergeBlock, "prevRandao is not valid before merge block");
+        require(witness.claimedBlockHash == keccak256(header), "Claimed block hash does not match header");
+
+        RLPReader.RLPItem[] memory headerItems = header.toRlpItem().toList();
+        uint256 baseFee = headerItems[15];
+		console.log(baseFee);
+        gasPrice[witness.blockNumber] = baseFee;
+        // emit RandaoProof(witness.blockNumber, baseFee);
+    }
 
 	// Function to calculate the percentage change in gas price from the previous block height to the current block height
 	function calculatePercentageChange(uint256 blockHeight) public view returns (uint256) {
 		uint256 previousBlockHeight = blockHeight - 1;
 		uint256 previousGasPrice = gasPrice[previousBlockHeight];
 		uint256 currentGasPrice = gasPrice[blockHeight];
-		uint256 percentageChange = ((currentGasPrice - previousGasPrice) / previousGasPrice) * 100;
+		uint256 percentageChange = (((currentGasPrice - previousGasPrice) * 100) / previousGasPrice); // mult all, then div to avoid int div issues
 		return percentageChange;
 	}
 
